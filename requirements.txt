@@ -1,6 +1,6 @@
-streamlit==1.32.0
-pandas==2.2.1
-numpy==1.26.4
-plotly==5.20.0
-scipy==1.12.0
-fyers-apiv3==3.0.4
+streamlit
+pandas
+numpy
+plotly
+scipy
+fyers-apiv3

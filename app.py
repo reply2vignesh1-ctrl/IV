@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from scipy.interpolate import griddata
-from datetime import datetime
-import time
-from fyers_apiv3 import fyersModel
+
 
 st.set_page_config(page_title="Nifty 3D IV Surface", layout="wide")
 st.title("Nifty Implied Volatility Surface (FYERS API)")
+
 
 # --- 1. PLOTTING FUNCTION ---
 def plot_iv_surface(df):
@@ -16,21 +16,24 @@ def plot_iv_surface(df):
         st.error("Data is empty or missing required columns.")
         return
 
-    x, y, z = df['Strike'].values, df['DTE'].values, df['IV'].values
-    xi, yi = np.linspace(x.min(), x.max(), 50), np.linspace(y.min(), y.max(), 50)
-    X, Y = np.meshgrid(xi, yi)
+    # Sort the data so the lines connect smoothly from left to right
+    df = df.sort_values(by=['DTE', 'Strike'])
+    
+    # Create clean labels for the legend
+    df['Expiry'] = df['DTE'].apply(lambda x: f"{int(x)} Days" if x >= 1 else "0 Days (Today)")
 
-    try:
-        Z = griddata((x, y), z, (X, Y), method='cubic')
-    except Exception as e:
-        st.error(f"Interpolation error: {e}")
-        return
-
-    fig = go.Figure(data=[go.Surface(z=Z, x=X, y=Y, colorscale='Viridis', colorbar_title='Implied Volatility (%)')])
+    # Create a 2D Line Chart (Volatility Skew)
+    fig = px.line(
+        df, x='Strike', y='IV', color='Expiry', markers=True,
+        title="Nifty Volatility Skew (2D View)",
+        labels={'IV': 'Implied Volatility (%)', 'Strike': 'Strike Price'}
+    )
+    
     fig.update_layout(
-        title="3D Implied Volatility Surface",
-        scene=dict(xaxis_title='Strike Price', yaxis_title='Days to Expiry (DTE)', zaxis_title='Implied Volatility (%)', camera=dict(eye=dict(x=1.5, y=-1.5, z=1.2))),
-        height=750, margin=dict(l=0, r=0, b=0, t=40)
+        height=600, 
+        hovermode="x unified", # Shows IV for all expiries when you tap a strike!
+        legend_title_text="Time to Expiration",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     st.plotly_chart(fig, use_container_width=True)
 

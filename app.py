@@ -106,6 +106,11 @@ if st.sidebar.button("Generate IV Surface"):
     else:
         with st.spinner("Fetching live option chain data from FYERS..."):
             df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
+            
+            # Now it will tell you if the data is empty instead of going blank
             if not df.empty:
                 st.success(f"Surface generated for {len(df)} data points.")
                 plot_iv_skew(df, spot)
+            else:
+                st.warning("⚠️ No valid data to plot! The market is closed and FYERS is currently reporting '0' for all IVs.")
+

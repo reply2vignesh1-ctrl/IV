@@ -40,12 +40,13 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
     fyers = fyersModel.FyersModel(client_id=client_id, is_async=False, token=access_token, log_path="")
     response = fyers.optionchain(data={"symbol": symbol, "strikecount": strikecount, "greeks": 1})
     
-    if response['s'] != 'ok':
+    if response.get('s') != 'ok':
         st.error(f"Fyers API Error: {response.get('message', 'Unknown Error')}")
         return pd.DataFrame()
         
-    spot_price = response['optionsChain'][0]['ltp']
-    expiries = response['expiryData']
+    # FIX: Added ['data'] to correctly navigate the FYERS V3 JSON structure
+    spot_price = response['data']['optionsChain'][0]['ltp']
+    expiries = response['data']['expiryData']
     surface_data, today = [], datetime.now()
     
     for exp in expiries[:5]:
@@ -53,14 +54,16 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
         dte = max((datetime.fromtimestamp(exp_timestamp) - today).days, 0.01)
         chain_res = fyers.optionchain(data={"symbol": symbol, "strikecount": strikecount, "greeks": 1, "timestamp": str(exp_timestamp)})
         
-        if chain_res['s'] == 'ok':
-            for item in chain_res['optionsChain']:
+        if chain_res.get('s') == 'ok':
+            # FIX: Added ['data'] here as well
+            for item in chain_res['data']['optionsChain']:
                 if item.get('strike_price') == -1: continue 
                 strike, opt_type, iv = item['strike_price'], item['option_type'], item.get('greeks', {}).get('iv', 0)
                 if iv > 0 and ((strike < spot_price and opt_type == 'PE') or (strike >= spot_price and opt_type == 'CE')):
                     surface_data.append({'Strike': strike, 'DTE': dte, 'IV': iv * 100})
         time.sleep(0.3) 
     return pd.DataFrame(surface_data)
+
 
 # --- 3. STREAMLIT UI & OAUTH LOGIN ---
 st.sidebar.header("1. FYERS Authentication")

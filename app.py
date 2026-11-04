@@ -1,42 +1,39 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
 import plotly.express as px
-from scipy.interpolate import griddata
+from datetime import datetime
+import time
+from fyers_apiv3 import fyersModel
 
+st.set_page_config(page_title="Nifty 2D Volatility Skew", layout="wide")
+st.title("Nifty Volatility Skew (FYERS API)")
 
-st.set_page_config(page_title="Nifty 3D IV Surface", layout="wide")
-st.title("Nifty Implied Volatility Surface (FYERS API)")
-
-
-# --- 1. PLOTTING FUNCTION ---
-def plot_iv_surface(df):
+# --- 1. PLOTTING FUNCTION (2D SKEW WITH SPOT LINE) ---
+def plot_iv_skew(df, spot_price):
     if df.empty or not {'Strike', 'DTE', 'IV'}.issubset(df.columns):
         st.error("Data is empty or missing required columns.")
         return
 
-    # Sort the data so the lines connect smoothly from left to right
     df = df.sort_values(by=['DTE', 'Strike'])
-    
-    # Create clean labels for the legend
     df['Expiry'] = df['DTE'].apply(lambda x: f"{int(x)} Days" if x >= 1 else "0 Days (Today)")
 
-    # Create a 2D Line Chart (Volatility Skew)
     fig = px.line(
         df, x='Strike', y='IV', color='Expiry', markers=True,
-        title="Nifty Volatility Skew (2D View)",
+        title=f"Nifty Volatility Skew",
         labels={'IV': 'Implied Volatility (%)', 'Strike': 'Strike Price'}
     )
     
+    # NEW: Add a vertical dashed line for the Spot Price
+    fig.add_vline(x=spot_price, line_dash="dash", line_color="red", 
+                  annotation_text=f"Live Spot: {spot_price}", annotation_position="top left")
+    
     fig.update_layout(
         height=600, 
-        hovermode="x unified", # Shows IV for all expiries when you tap a strike!
+        hovermode="x unified",
         legend_title_text="Time to Expiration",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     st.plotly_chart(fig, use_container_width=True)
-
 
 # --- 2. FYERS DATA FETCHER ---
 @st.cache_data(ttl=300)
@@ -46,16 +43,14 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
     
     if response.get('s') != 'ok':
         st.error(f"Fyers API Error: {response.get('message', 'Unknown Error')}")
-        return pd.DataFrame()
+        return pd.DataFrame(), 0
         
     spot_price = response['data']['optionsChain'][0]['ltp']
     expiries = response['data']['expiryData']
     surface_data, today = [], datetime.now()
     
     for exp in expiries[:5]:
-        # FIX: Force the timestamp text into a math-friendly integer
         exp_timestamp = int(exp['expiry'])
-        
         dte = max((datetime.fromtimestamp(exp_timestamp) - today).days, 0.01)
         chain_res = fyers.optionchain(data={"symbol": symbol, "strikecount": strikecount, "greeks": 1, "timestamp": str(exp_timestamp)})
         
@@ -63,11 +58,14 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
             for item in chain_res['data']['optionsChain']:
                 if item.get('strike_price') == -1: continue 
                 strike, opt_type, iv = item['strike_price'], item['option_type'], item.get('greeks', {}).get('iv', 0)
-                if iv > 0 and ((strike < spot_price and opt_type == 'PE') or (strike >= spot_price and opt_type == 'CE')):
-                    surface_data.append({'Strike': strike, 'DTE': dte, 'IV': iv * 100})
+                
+                iv_pct = iv * 100
+                if 0 < iv_pct <= 150 and abs(strike - spot_price) <= 1500:
+                    if (strike < spot_price and opt_type == 'PE') or (strike >= spot_price and opt_type == 'CE'):
+                        surface_data.append({'Strike': strike, 'DTE': dte, 'IV': iv_pct})
         time.sleep(0.3) 
-    return pd.DataFrame(surface_data)
-
+    # Return both the dataframe and the spot price so the chart can draw the line
+    return pd.DataFrame(surface_data), spot_price
 
 # --- 3. STREAMLIT UI & OAUTH LOGIN ---
 st.sidebar.header("1. FYERS Authentication")
@@ -76,7 +74,6 @@ client_id = st.secrets.get("FYERS_CLIENT_ID", "")
 secret_key = st.secrets.get("FYERS_SECRET_KEY", "")
 redirect_uri = "https://127.0.0.1"
 
-# Initialize session state for the token
 if "access_token" not in st.session_state:
     st.session_state.access_token = st.secrets.get("FYERS_ACCESS_TOKEN", "")
 
@@ -108,7 +105,7 @@ if st.sidebar.button("Generate IV Surface"):
         st.warning("Please log in and generate your token first.")
     else:
         with st.spinner("Fetching live option chain data from FYERS..."):
-            df = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
+            df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
             if not df.empty:
                 st.success(f"Surface generated for {len(df)} data points.")
-                plot_iv_surface(df)
+                plot_iv_skew(df, spot)

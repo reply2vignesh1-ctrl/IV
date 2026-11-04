@@ -67,7 +67,7 @@ st.sidebar.header("1. FYERS Authentication")
 
 client_id = st.secrets.get("FYERS_CLIENT_ID", "")
 secret_key = st.secrets.get("FYERS_SECRET_KEY", "")
-redirect_uri = "https://trade.fyers.in/api-login/redirect-uri/index.html"
+redirect_uri = "https://127.0.0.1"
 
 # Initialize session state for the token
 if "access_token" not in st.session_state:

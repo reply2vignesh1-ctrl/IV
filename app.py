@@ -34,6 +34,7 @@ def plot_iv_surface(df):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+
 # --- 2. FYERS DATA FETCHER ---
 @st.cache_data(ttl=300)
 def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", strikecount=50):
@@ -44,18 +45,18 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
         st.error(f"Fyers API Error: {response.get('message', 'Unknown Error')}")
         return pd.DataFrame()
         
-    # FIX: Added ['data'] to correctly navigate the FYERS V3 JSON structure
     spot_price = response['data']['optionsChain'][0]['ltp']
     expiries = response['data']['expiryData']
     surface_data, today = [], datetime.now()
     
     for exp in expiries[:5]:
-        exp_timestamp = exp['expiry']
+        # FIX: Force the timestamp text into a math-friendly integer
+        exp_timestamp = int(exp['expiry'])
+        
         dte = max((datetime.fromtimestamp(exp_timestamp) - today).days, 0.01)
         chain_res = fyers.optionchain(data={"symbol": symbol, "strikecount": strikecount, "greeks": 1, "timestamp": str(exp_timestamp)})
         
         if chain_res.get('s') == 'ok':
-            # FIX: Added ['data'] here as well
             for item in chain_res['data']['optionsChain']:
                 if item.get('strike_price') == -1: continue 
                 strike, opt_type, iv = item['strike_price'], item['option_type'], item.get('greeks', {}).get('iv', 0)

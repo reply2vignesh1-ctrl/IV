@@ -67,6 +67,7 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
         time.sleep(0.3) 
     return pd.DataFrame(surface_data), spot_price
 
+
 # --- 3. STREAMLIT UI & OAUTH LOGIN ---
 st.sidebar.header("1. FYERS Authentication")
 

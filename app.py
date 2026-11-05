@@ -207,33 +207,21 @@ else:
     st.sidebar.warning("Please add FYERS_CLIENT_ID and FYERS_SECRET_KEY to your Streamlit Secrets.")
 
 
-# --- 6. GENERATE BUTTON & AUTO-REFRESH ---
+# --- 6. GENERATE BUTTON ---
 st.sidebar.divider()
 st.sidebar.header("2. Generate Surface")
 symbol = st.sidebar.text_input("Index Symbol", value="NSE:NIFTY50-INDEX")
 
-# The auto-refresh toggle
-auto_refresh = st.sidebar.checkbox("Auto-Refresh (3 mins)")
-
-if st.sidebar.button("Generate IV Surface") or auto_refresh:
+if st.sidebar.button("Generate IV Surface"):
     if not st.session_state.access_token:
         st.warning("Please log in first.")
     else:
         with st.spinner("Fetching live option chain data from FYERS..."):
-            # Clears the cache if auto-refreshing so data is genuinely live
-            if auto_refresh:
-                fetch_fyers_iv_surface.clear()
-                
             df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
             
             if not df.empty:
                 display_iv_metrics(df, spot)
                 st.success(f"Surface generated for {len(df)} data points.")
                 plot_iv_skew(df, spot)
-                
-                # Sleeps for 3 minutes, then triggers a complete page refresh
-                if auto_refresh:
-                    time.sleep(180)
-                    st.rerun()
             else:
                 st.warning("⚠️ No valid data to plot! The market is closed or FYERS is reporting '0' for all IVs.")

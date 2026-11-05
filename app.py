@@ -4,6 +4,32 @@ import plotly.express as px
 from datetime import datetime
 import time
 from fyers_apiv3 import fyersModel
+import json
+import os
+import time
+from datetime import datetime
+
+# --- PERMANENT MEMORY STORAGE ---
+ANCHOR_FILE = "daily_anchor.json"
+
+def get_persisted_state():
+    """Reads the JSON file. If it's a new day, it wipes the memory clean."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if os.path.exists(ANCHOR_FILE):
+        with open(ANCHOR_FILE, "r") as f:
+            try:
+                data = json.load(f)
+                if data.get("date") == today:
+                    return data.get("morning_skew"), data.get("prev_skew")
+            except:
+                pass
+    return None, None
+
+def save_persisted_state(morning_skew, prev_skew):
+    """Saves the tick data to the server's hard drive."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    with open(ANCHOR_FILE, "w") as f:
+        json.dump({"date": today, "morning_skew": morning_skew, "prev_skew": prev_skew}, f)
 
 st.set_page_config(page_title="Nifty 2D Volatility Skew", layout="wide")
 st.title("Nifty Volatility Skew (FYERS API)")
@@ -110,7 +136,10 @@ st.sidebar.divider()
 st.sidebar.header("2. Generate Surface")
 symbol = st.sidebar.text_input("Index Symbol", value="NSE:NIFTY50-INDEX")
 
-if st.sidebar.button("Generate IV Surface"):
+# The new auto-refresh toggle
+auto_refresh = st.sidebar.checkbox("Auto-Refresh (3 mins)")
+
+if st.sidebar.button("Generate IV Surface") or auto_refresh:
     if not st.session_state.access_token:
         st.warning("Please log in first.")
     else:
@@ -118,8 +147,13 @@ if st.sidebar.button("Generate IV Surface"):
             df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
             
             if not df.empty:
-                st.success(f"Surface generated for {len(df)} data points.")
+                display_iv_metrics(df, spot)
                 plot_iv_skew(df, spot)
+                
+                # If the checkbox is ticked, it waits 180 seconds and reruns the entire page
+                if auto_refresh:
+                    time.sleep(180)
+                    st.rerun()
             else:
-                st.warning("⚠️ No valid data to plot! The market is closed or FYERS is reporting '0' for all IVs.")
+                st.warning("⚠️ No valid data to plot!")
                 

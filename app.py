@@ -35,6 +35,7 @@ def plot_iv_skew(df, spot_price):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+
 # --- 2. FYERS DATA FETCHER ---
 @st.cache_data(ttl=300)
 def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", strikecount=50):
@@ -59,12 +60,11 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
                 if item.get('strike_price') == -1: continue 
                 strike, opt_type, iv = item['strike_price'], item['option_type'], item.get('greeks', {}).get('iv', 0)
                 
-                iv_pct = iv * 100
-                if 0 < iv_pct <= 150 and abs(strike - spot_price) <= 1500:
+                # FIX: Removed the '* 100' multiplier. We now use the raw IV from FYERS directly.
+                if 0 < iv <= 150 and abs(strike - spot_price) <= 1500:
                     if (strike < spot_price and opt_type == 'PE') or (strike >= spot_price and opt_type == 'CE'):
-                        surface_data.append({'Strike': strike, 'DTE': dte, 'IV': iv_pct})
+                        surface_data.append({'Strike': strike, 'DTE': dte, 'IV': iv})
         time.sleep(0.3) 
-    # Return both the dataframe and the spot price so the chart can draw the line
     return pd.DataFrame(surface_data), spot_price
 
 # --- 3. STREAMLIT UI & OAUTH LOGIN ---

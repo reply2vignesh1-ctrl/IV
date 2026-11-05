@@ -237,4 +237,3 @@ if st.sidebar.button("Generate IV Surface") or auto_refresh:
                     st.rerun()
             else:
                 st.warning("⚠️ No valid data to plot! The market is closed or FYERS is reporting '0' for all IVs.")
-                

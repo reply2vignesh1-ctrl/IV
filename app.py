@@ -73,27 +73,36 @@ st.sidebar.header("1. FYERS Authentication")
 
 client_id = st.secrets.get("FYERS_CLIENT_ID", "")
 secret_key = st.secrets.get("FYERS_SECRET_KEY", "")
-redirect_uri = "https://127.0.0.1"
+
+# This matches the FYERS dashboard perfectly!
+redirect_uri = "https://nifty-iv-surface-vdfuj8nv2kpgxfkwvk7unh.streamlit.app"
 
 if "access_token" not in st.session_state:
     st.session_state.access_token = st.secrets.get("FYERS_ACCESS_TOKEN", "")
 
 if client_id and secret_key:
     session_model = fyersModel.SessionModel(client_id=client_id, secret_key=secret_key, redirect_uri=redirect_uri, response_type="code", grant_type="authorization_code")
-    auth_link = session_model.generate_authcode()
     
-    st.sidebar.markdown(f"**[👉 Click Here to Login to FYERS]({auth_link})**")
-    st.sidebar.caption("After logging in, copy the 'auth_code' from the blank page's URL bar.")
-    
-    auth_code = st.sidebar.text_input("Paste auth_code here:")
-    if st.sidebar.button("Set Daily Token"):
+    # THE AUTO-LOGIN MAGIC: It reads the auth_code straight from the URL!
+    if "auth_code" in st.query_params:
+        auth_code = st.query_params["auth_code"]
         session_model.set_token(auth_code)
         res = session_model.generate_token()
         if res.get('s') == 'ok':
             st.session_state.access_token = res['access_token']
-            st.sidebar.success("Token generated successfully for today!")
+            st.query_params.clear() # Cleans up the URL bar
+            st.rerun()
         else:
-            st.sidebar.error(f"Error: {res}")
+            st.sidebar.error("Auto-login failed. Please try again.")
+
+    if not st.session_state.access_token:
+        auth_link = session_model.generate_authcode()
+        st.sidebar.markdown(f"**[👉 1-Tap Login to FYERS]({auth_link})**")
+    else:
+        st.sidebar.success("✅ Connected to FYERS Live Data")
+        if st.sidebar.button("Logout"):
+            st.session_state.access_token = ""
+            st.rerun()
 else:
     st.sidebar.warning("Please add FYERS_CLIENT_ID and FYERS_SECRET_KEY to your Streamlit Secrets.")
 
@@ -103,15 +112,14 @@ symbol = st.sidebar.text_input("Index Symbol", value="NSE:NIFTY50-INDEX")
 
 if st.sidebar.button("Generate IV Surface"):
     if not st.session_state.access_token:
-        st.warning("Please log in and generate your token first.")
+        st.warning("Please log in first.")
     else:
         with st.spinner("Fetching live option chain data from FYERS..."):
             df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
             
-            # Now it will tell you if the data is empty instead of going blank
             if not df.empty:
                 st.success(f"Surface generated for {len(df)} data points.")
                 plot_iv_skew(df, spot)
             else:
-                st.warning("⚠️ No valid data to plot! The market is closed and FYERS is currently reporting '0' for all IVs.")
-
+                st.warning("⚠️ No valid data to plot! The market is closed or FYERS is reporting '0' for all IVs.")
+                

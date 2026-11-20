@@ -15,14 +15,11 @@ from fyers_apiv3 import fyersModel
 st.set_page_config(page_title="Nifty Institutional Options Desk", layout="wide", initial_sidebar_state="expanded")
 st.title("🎯 Nifty Institutional Desk: IV Skew, Live GEX & OI Radar (FYERS)")
 
-# --- Session States for OI Dashboard (100% Intact from app (2).py) ---
 if 'morning_anchor' not in st.session_state:
     st.session_state.morning_anchor = None
-    
     if os.path.exists("anchor_data.csv") and os.path.exists("anchor_date.txt"):
         with open("anchor_date.txt", "r") as f:
             saved_date = f.read().strip()
-            
         if saved_date == datetime.now().strftime("%Y-%m-%d"):
             st.session_state.morning_anchor = pd.read_csv("anchor_data.csv")
 
@@ -39,12 +36,11 @@ if 'data_generated' not in st.session_state:
 
 
 # ==============================================================================
-# 1. PERMANENT MEMORY STORAGE FOR IV SKEW (100% INTACT FROM app (1).py)
+# 1. PERMANENT MEMORY STORAGE FOR IV SKEW
 # ==============================================================================
 ANCHOR_FILE = "daily_anchor.json"
 
 def get_persisted_state():
-    """Reads the JSON file. If it's a new day, it wipes the memory clean."""
     today = datetime.now().strftime("%Y-%m-%d")
     if os.path.exists(ANCHOR_FILE):
         with open(ANCHOR_FILE, "r") as f:
@@ -57,7 +53,6 @@ def get_persisted_state():
     return None, None
 
 def save_persisted_state(morning_skew, prev_skew):
-    """Saves the tick data to the server's hard drive."""
     today = datetime.now().strftime("%Y-%m-%d")
     with open(ANCHOR_FILE, "w") as f:
         json.dump({"date": today, "morning_skew": morning_skew, "prev_skew": prev_skew}, f)
@@ -98,7 +93,6 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
                 oi = float(item.get('oi', 0))
                 chgoi = float(item.get('chgoi', 0))
                 
-                # --- A. COLLECT DATA FOR LIVE GEX ---
                 if abs(strike - spot_price) <= 1500 and opt_type in ['CE', 'PE']:
                     if strike not in strike_map:
                         strike_map[strike] = {
@@ -113,7 +107,6 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
                     strike_map[strike][f'{prefix}oi'] = oi
                     strike_map[strike][f'{prefix}chgoi'] = chgoi
 
-                # --- B. YOUR EXACT IV SURFACE LOGIC (100% UNCHANGED) ---
                 if dte > 15 and strike % 100 != 0:
                     continue
                 
@@ -127,18 +120,11 @@ def fetch_fyers_iv_surface(client_id, access_token, symbol="NSE:NIFTY50-INDEX", 
     return pd.DataFrame(surface_data), pd.DataFrame(gex_records), spot_price
 
 
-# --- YOUR EXACT OI DASHBOARD FETCHER (100% UNCHANGED FROM app (2).py) ---
 @st.cache_data(ttl=60)
 def fetch_fyers_oc(client_id, access_token):
     fyers = fyersModel.FyersModel(client_id=client_id, token=access_token, is_async=False, log_path="")
-    
     try:
-        req_data = {
-            "symbol": "NSE:NIFTY50-INDEX",
-            "strikecount": 15,
-            "greeks": 1  
-        }
-        
+        req_data = {"symbol": "NSE:NIFTY50-INDEX", "strikecount": 15, "greeks": 1}
         resp = fyers.optionchain(req_data)
         
         if resp.get('s') != 'ok' or 'data' not in resp:
@@ -146,16 +132,13 @@ def fetch_fyers_oc(client_id, access_token):
             return None
             
         chain_data = resp['data'].get('optionsChain', [])
-        
         records = []
         for opt in chain_data:
             opt_type = opt.get('option_type')
-            if opt_type not in ['CE', 'PE']:
-                continue
+            if opt_type not in ['CE', 'PE']: continue
                 
             current_oi = opt.get('oi', 0)
             prev_oi = opt.get('prev_oi', current_oi)
-            # Support both top-level 'iv' and nested 'greeks.iv'
             iv_val = opt.get('iv', 0) or opt.get('greeks', {}).get('iv', 0)
             
             records.append({
@@ -168,54 +151,34 @@ def fetch_fyers_oc(client_id, access_token):
             })
             
         if not records:
-            st.warning("No active premium data returned.")
             return None
             
         df_raw = pd.DataFrame(records)
         ce_df = df_raw[df_raw['TYPE'] == 'CE'].rename(columns={'OI': 'CE_OI', 'CHG_OI': 'CE_CHG_OI', 'LTP': 'CE_LTP', 'IV': 'CE_IV'}).drop('TYPE', axis=1)
         pe_df = df_raw[df_raw['TYPE'] == 'PE'].rename(columns={'OI': 'PE_OI', 'CHG_OI': 'PE_CHG_OI', 'LTP': 'PE_LTP', 'IV': 'PE_IV'}).drop('TYPE', axis=1)
         
-        df = pd.merge(ce_df, pe_df, on='STRIKE', how='outer').fillna(0).sort_values('STRIKE').reset_index(drop=True)
-        return df
-        
+        return pd.merge(ce_df, pe_df, on='STRIKE', how='outer').fillna(0).sort_values('STRIKE').reset_index(drop=True)
     except Exception as e:
         st.error(f"Fyers Option Chain Error: {e}")
         return None
 
 
 # ==============================================================================
-# 3. IV SKEW & HUD METRICS FUNCTIONS (100% INTACT FROM app (1).py)
+# 3. IV SKEW & HUD METRICS FUNCTIONS
 # ==============================================================================
 def plot_iv_skew(df, spot):
     fig = go.Figure()
     dtes = sorted(df['DTE'].unique())
-    
     for dte in dtes:
         subset = df[df['DTE'] == dte].sort_values(by='Strike')
         if not subset.empty:
-            fig.add_trace(go.Scatter(
-                x=subset['Strike'], 
-                y=subset['IV'], 
-                mode='lines+markers', 
-                name=f'{int(dte)} Days',
-                marker=dict(size=4)
-            ))
-
+            fig.add_trace(go.Scatter(x=subset['Strike'], y=subset['IV'], mode='lines+markers', name=f'{int(dte)} Days', marker=dict(size=4)))
     fig.add_vline(x=spot, line_dash="dash", line_color="red", annotation_text=f"Live Spot: {spot:.1f}", annotation_position="top left")
-    
-    fig.update_layout(
-        title="Nifty Volatility Skew",
-        xaxis_title="Strike Price",
-        yaxis_title="Implied Volatility (%)",
-        template="plotly_dark",
-        hovermode="x unified",
-        legend_title="Time to Expiration"
-    )
+    fig.update_layout(title="Nifty Volatility Skew", xaxis_title="Strike Price", yaxis_title="Implied Volatility (%)", template="plotly_dark", hovermode="x unified", legend_title="Time to Expiration")
     st.plotly_chart(fig, use_container_width=True)
 
 def display_iv_metrics(df, spot):
     morning_skew, prev_skew = get_persisted_state()
-
     dtes = sorted(df['DTE'].unique())
     front_dte = dtes[0]
     next_dte = dtes[1] if len(dtes) > 1 else front_dte
@@ -238,34 +201,21 @@ def display_iv_metrics(df, spot):
         call_iv = front_df.iloc[(front_df['Strike'] - call_target).abs().argsort()[:1]]['IV'].values[0]
         current_skew = put_iv - call_iv
 
-        if morning_skew is None:
-            morning_skew = current_skew
-            
+        if morning_skew is None: morning_skew = current_skew
         morning_change = current_skew - morning_skew
-        
-        prev_change = 0.0
-        if prev_skew is not None:
-            prev_change = current_skew - prev_skew
+        prev_change = 0.0 if prev_skew is None else current_skew - prev_skew
             
         save_persisted_state(morning_skew, current_skew)
 
-        if term_diff > 1.0:
-            regime = "🔴 SELL PREMIUM (Front IV High)"
-            advice = f"Front DTE ({int(front_dte)}d) is +{term_diff:.1f}% overpriced. Sell Credit Spreads."
-        elif term_diff < -0.5:
-            regime = "🟢 BUY OPTIONS (Front IV Cheap)"
-            advice = f"Front DTE ({int(front_dte)}d) is cheap ({term_diff:.1f}%). Favorable for buying ATM/ITM options."
-        else:
-            regime = "🟡 NEUTRAL IV (Use Vertical Spreads)"
-            advice = "Term structure is flat. Use Debit or Credit Spreads based on Order Flow."
+        if term_diff > 1.0: regime, advice = "🔴 SELL PREMIUM (Front IV High)", f"Front DTE ({int(front_dte)}d) is +{term_diff:.1f}% overpriced. Sell Credit Spreads."
+        elif term_diff < -0.5: regime, advice = "🟢 BUY OPTIONS (Front IV Cheap)", f"Front DTE ({int(front_dte)}d) is cheap ({term_diff:.1f}%). Favorable for buying ATM/ITM options."
+        else: regime, advice = "🟡 NEUTRAL IV (Use Vertical Spreads)", "Term structure is flat. Use Debit or Credit Spreads based on Order Flow."
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Nifty Spot (ATM)", f"{spot:.1f}", f"ATM Strike: {atm_strike}", delta_color="off")
         col2.metric(f"Front ATM IV ({int(front_dte)}d)", f"{atm_iv:.2f}%", f"{term_diff:+.2f}% vs {int(next_dte)}d", delta_color="inverse")
-        
         col3.metric(label="500-Pt Put Skew", value=f"{current_skew:+.2f}%", delta=f"{prev_change:+.2f}% (Tick)", delta_color="inverse")
         col3.caption(f"Since Morning Anchor: **{morning_change:+.2f}%**")
-        
         col4.metric("IV Regime", "Sell Front" if term_diff > 1.0 else ("Buy Front" if term_diff < -0.5 else "Spreads"), f"Next ATM: {next_atm_iv:.2f}%", delta_color="off")
 
         st.info(f"**{regime}** — {advice}")
@@ -274,7 +224,7 @@ def display_iv_metrics(df, spot):
 
 
 # ==============================================================================
-# 4. LIVE DEALER GEX ENGINE & CHART (100% INTACT)
+# 4. LIVE DEALER GEX ENGINE & CHART (UPDATED NET GEX WALLS)
 # ==============================================================================
 def bs_gamma(S, K, T, r, sigma_pct):
     T_safe = np.maximum(T, 1 / (365.0 * 24.0))
@@ -321,12 +271,9 @@ def display_gex_dashboard(gex_df, spot):
     with c3:
         view_mode = st.radio("Bar View", ["Net GEX", "Split Call / Put"], horizontal=True)
 
-    if selected_exp.startswith("Front Expiry"):
-        sub_df = gex_df[gex_df['Expiry'] == expiries_list[0]].copy()
-    elif selected_exp == "All 5 Expiries Combined":
-        sub_df = gex_df.copy()
-    else:
-        sub_df = gex_df[gex_df['Expiry'] == selected_exp].copy()
+    if selected_exp.startswith("Front Expiry"): sub_df = gex_df[gex_df['Expiry'] == expiries_list[0]].copy()
+    elif selected_exp == "All 5 Expiries Combined": sub_df = gex_df.copy()
+    else: sub_df = gex_df[gex_df['Expiry'] == selected_exp].copy()
 
     use_chgoi = "Change in OI" in gex_mode
     c_oi_col = 'ce_chgoi' if use_chgoi else 'ce_oi'
@@ -342,72 +289,68 @@ def display_gex_dashboard(gex_df, spot):
     sub_df['net_gex'] = sub_df['call_gex'] + sub_df['put_gex']
 
     strike_gex = sub_df.groupby('Strike', as_index=False)[['call_gex', 'put_gex', 'net_gex']].sum()
-    strike_gex = strike_gex[(strike_gex['Strike'] >= spot - 800) & (strike_gex['Strike'] <= spot + 800)]
+    strike_gex = strike_gex[(strike_gex['Strike'] >= spot - 800) & (strike_gex['Strike'] <= spot + 800)].reset_index(drop=True)
 
     if strike_gex.empty:
         st.warning("No strikes within +/- 800 points of Spot.")
         return
 
-    call_wall = int(strike_gex.loc[strike_gex['call_gex'].idxmax(), 'Strike'])
-    put_wall = int(strike_gex.loc[strike_gex['put_gex'].idxmin(), 'Strike'])
+    # UPDATED TRUE WALL LOGIC (Highest Positive & Lowest Negative NET GEX)
+    max_pos_row = strike_gex.loc[strike_gex['net_gex'].idxmax()]
+    min_neg_row = strike_gex.loc[strike_gex['net_gex'].idxmin()]
+    
+    call_wall = int(max_pos_row['Strike']) if max_pos_row['net_gex'] > 0 else None
+    put_wall = int(min_neg_row['Strike']) if min_neg_row['net_gex'] < 0 else None
     total_net_gex = strike_gex['net_gex'].sum()
     gamma_flip = find_gamma_flip(sub_df, spot, r, use_chgoi=use_chgoi)
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Net Dealer GEX", f"₹{total_net_gex:+.1f} Cr", "Positive (Mean Revert / Pin)" if total_net_gex >= 0 else "Negative (Trend / Squeeze)", delta_color="normal" if total_net_gex >= 0 else "inverse")
     m2.metric("Zero Gamma Flip", f"{gamma_flip:.1f}" if gamma_flip else "Out of Range", "Above = Calm | Below = Volatile", delta_color="off")
-    m3.metric("Call Wall (Resistance)", f"{call_wall}", f"{call_wall - spot:+.0f} pts from Spot", delta_color="off")
-    m4.metric("Put Wall (Support)", f"{put_wall}", f"{put_wall - spot:+.0f} pts from Spot", delta_color="off")
+    m3.metric("Call Wall (Max +Net GEX)", f"{call_wall}" if call_wall else "None", f"{call_wall - spot:+.0f} pts | ₹{max_pos_row['net_gex']:+.1f} Cr" if call_wall else "No Net +GEX", delta_color="off")
+    m4.metric("Put Wall (Max -Net GEX)", f"{put_wall}" if put_wall else "None", f"{put_wall - spot:+.0f} pts | ₹{min_neg_row['net_gex']:+.1f} Cr" if put_wall else "No Net -GEX", delta_color="off")
 
     fig_gex = go.Figure()
     if view_mode == "Net GEX":
         colors = ['#00E676' if v >= 0 else '#FF1744' for v in strike_gex['net_gex']]
-        fig_gex.add_trace(go.Bar(
-            y=strike_gex['Strike'], x=strike_gex['net_gex'],
-            orientation='h', marker_color=colors, name='Net GEX (₹ Cr)'
-        ))
+        fig_gex.add_trace(go.Bar(y=strike_gex['Strike'], x=strike_gex['net_gex'], orientation='h', marker_color=colors, name='Net GEX (₹ Cr)'))
     else:
-        fig_gex.add_trace(go.Bar(
-            y=strike_gex['Strike'], x=strike_gex['call_gex'],
-            orientation='h', marker_color='#00E676', name='Call GEX (+)'
-        ))
-        fig_gex.add_trace(go.Bar(
-            y=strike_gex['Strike'], x=strike_gex['put_gex'],
-            orientation='h', marker_color='#FF5252', name='Put GEX (-)'
-        ))
+        fig_gex.add_trace(go.Bar(y=strike_gex['Strike'], x=strike_gex['call_gex'], orientation='h', marker_color='#00E676', name='Call GEX (+)'))
+        fig_gex.add_trace(go.Bar(y=strike_gex['Strike'], x=strike_gex['put_gex'], orientation='h', marker_color='#FF5252', name='Put GEX (-)'))
 
     fig_gex.add_hline(y=spot, line_dash="dash", line_color="yellow", annotation_text=f"Live Spot: {spot:.1f}", annotation_position="top right")
     if gamma_flip and (spot - 800 <= gamma_flip <= spot + 800):
         fig_gex.add_hline(y=gamma_flip, line_dash="dot", line_color="cyan", annotation_text=f"Gamma Flip: {gamma_flip:.1f}", annotation_position="bottom right")
+    if call_wall:
+        fig_gex.add_hline(y=call_wall, line_dash="dash", line_color="#00E676", annotation_text=f"Call Wall: {call_wall}", annotation_position="top left")
+    if put_wall:
+        fig_gex.add_hline(y=put_wall, line_dash="dash", line_color="#FF5252", annotation_text=f"Put Wall: {put_wall}", annotation_position="bottom left")
 
-    fig_gex.update_layout(
-        title=f"Nifty Dealer Gamma Exposure ({selected_exp} | {gex_mode})",
-        xaxis_title="Dealer Gamma Exposure (₹ Crores per 1% Move)",
-        yaxis_title="Strike Price",
-        template="plotly_dark",
-        barmode="relative",
-        height=650
-    )
+    fig_gex.update_layout(title=f"Nifty Dealer Gamma Exposure ({selected_exp} | {gex_mode})", xaxis_title="Dealer Gamma Exposure (₹ Crores per 1% Move)", yaxis_title="Strike Price", template="plotly_dark", barmode="relative", height=650)
     st.plotly_chart(fig_gex, use_container_width=True)
 
 
 # ==============================================================================
 # 5. SIDEBAR: UNIFIED AUTHENTICATION & CONTROLS
 # ==============================================================================
-st.sidebar.header("1. FYERS Authentication")
+app_pass = st.secrets.get("APP_PASSWORD", "")
+if app_pass:
+    st.sidebar.header("🔒 Secure Access")
+    entered_pass = st.sidebar.text_input("Enter Personal PIN", type="password")
+    if entered_pass != app_pass:
+        st.warning("🔒 App locked for personal use. Enter your PIN in the sidebar.")
+        st.stop()
 
+st.sidebar.header("1. FYERS Authentication")
 client_id = st.secrets.get("FYERS_CLIENT_ID", "")
 secret_key = st.secrets.get("FYERS_SECRET_KEY", "")
 redirect_uri = "https://nifty-iv-surface-vdfuj8nv2kpgxfkwvk7unh.streamlit.app"
 
-if "access_token" not in st.session_state:
+if "access_token" not in st.session_state: 
     st.session_state.access_token = st.secrets.get("FYERS_ACCESS_TOKEN", "")
 
 if client_id and secret_key:
-    session_model = fyersModel.SessionModel(
-        client_id=client_id, secret_key=secret_key, 
-        redirect_uri=redirect_uri, response_type="code", grant_type="authorization_code"
-    )
+    session_model = fyersModel.SessionModel(client_id=client_id, secret_key=secret_key, redirect_uri=redirect_uri, response_type="code", grant_type="authorization_code")
     
     if "auth_code" in st.query_params and not st.session_state.access_token:
         auth_code = st.query_params["auth_code"]
@@ -426,7 +369,6 @@ if client_id and secret_key:
         st.sidebar.markdown(f"**[👉 1-Tap Login to FYERS]({auth_link})**")
     else:
         st.sidebar.success("✅ Connected to FYERS Live Data")
-        # Automatically share token with OI Radar!
         if not st.session_state.fyers_access_token:
             st.session_state.fyers_access_token = st.session_state.access_token
         if st.sidebar.button("Logout"):
@@ -437,19 +379,14 @@ if client_id and secret_key:
 else:
     st.sidebar.warning("Please add FYERS_CLIENT_ID and FYERS_SECRET_KEY to your Streamlit Secrets.")
 
-# --- Optional Override for Separate OI App ID (BJ5M8T24YW-200) ---
 with st.sidebar.expander("🔌 Optional: Separate OI App Credentials"):
     st.caption("Leave blank to use your main 1-Tap Login automatically, or enter your 2nd App ID if desired.")
     app_id_override = st.text_input("OI App ID", value="BJ5M8T24YW-200")
     secret_id_override = st.text_input("OI Secret ID", type="password")
     if app_id_override and secret_id_override:
-        oi_session = fyersModel.SessionModel(
-            client_id=app_id_override, secret_key=secret_id_override,
-            redirect_uri=redirect_uri, response_type='code', grant_type='authorization_code'
-        )
+        oi_session = fyersModel.SessionModel(client_id=app_id_override, secret_key=secret_id_override, redirect_uri=redirect_uri, response_type='code', grant_type='authorization_code')
         st.markdown(f"**[👉 Login with 2nd App ID]({oi_session.generate_authcode()})**")
 
-# Active Client ID & Token for OI Radar
 active_oi_client_id = client_id if st.session_state.access_token else app_id_override
 active_oi_token = st.session_state.access_token or st.session_state.fyers_access_token
 
@@ -463,9 +400,9 @@ if st.sidebar.button("🚀 Generate All Live Data (IV + GEX + OI)", use_containe
 
 st.sidebar.markdown("---")
 st.sidebar.header("⏱️ OI Session Comparison")
-if st.sidebar.button("📸 Set Current Data as Morning Anchor"):
+if st.sidebar.button("📸 Set Current Data as Morning Anchor"): 
     st.session_state.set_anchor_flag = True
-else:
+else: 
     st.session_state.set_anchor_flag = False
     
 if st.session_state.morning_anchor is not None:
@@ -485,42 +422,34 @@ if st.session_state.data_generated:
         st.warning("Please log in first in the sidebar.")
     else:
         with st.spinner("Fetching live option chain data from FYERS (60s Cache Active)..."):
-            # 1. Fetch IV Surface & GEX Data
             df_iv, gex_df, spot = fetch_fyers_iv_surface(client_id, st.session_state.access_token, symbol)
             
-            # 2. Fetch OI Radar Data
             if st.session_state.fetch_now or st.session_state.live_df is None:
                 st.session_state.live_df = fetch_fyers_oc(active_oi_client_id, active_oi_token)
                 st.session_state.fetch_now = False
 
         if not df_iv.empty:
-            # Always display Top IV HUD Metrics
             display_iv_metrics(df_iv, spot)
             
-            # 3 Clean Tabs for Instant Switching
             tab1, tab2, tab3 = st.tabs([
                 "📈 Volatility Skew (Original)", 
                 "⚡ Live Dealer GEX Levels", 
                 "🎯 Live NIFTY OI Radar"
             ])
             
-            # --- TAB 1: VOLATILITY SKEW ---
             with tab1:
                 st.success(f"Surface generated for {len(df_iv)} data points.")
                 plot_iv_skew(df_iv, spot)
                 
-            # --- TAB 2: LIVE DEALER GEX ---
             with tab2:
                 display_gex_dashboard(gex_df, spot)
                 
-            # --- TAB 3: YOUR EXACT OI DASHBOARD (100% UNCHANGED FROM app (2).py) ---
             with tab3:
                 df = st.session_state.live_df
 
                 if df is not None and not df.empty:
                     st.success("Dashboard updated. Displaying latest fetched data.")
 
-                    # PERSISTENT ANCHOR SAVE LOGIC
                     if st.session_state.set_anchor_flag:
                         st.session_state.morning_anchor = df.copy()
                         df.to_csv("anchor_data.csv", index=False)
@@ -529,7 +458,6 @@ if st.session_state.data_generated:
                         st.session_state.set_anchor_flag = False
                         st.rerun()
 
-                    # TRUE IMPLIED ATM & STRADDLE CALCULATIONS
                     v_ltp = df[(df['CE_LTP'] > 0) & (df['PE_LTP'] > 0)].copy()
                     
                     if v_ltp.empty:
@@ -542,7 +470,6 @@ if st.session_state.data_generated:
                         implied_fwd = round(atm_strike + (atm_r['CE_LTP'] - atm_r['PE_LTP']), 2)
                         straddle_prem = round(atm_r['CE_LTP'] + atm_r['PE_LTP'], 2)
 
-                        # PCR METRICS
                         pcr_overall = df['PE_OI'].sum() / df['CE_OI'].sum() if df['CE_OI'].sum() > 0 else 0
                         df_300 = df[(df['STRIKE'] >= atm_strike - 300) & (df['STRIKE'] <= atm_strike + 300)].copy()
                         pcr_300 = df_300['PE_OI'].sum() / df_300['CE_OI'].sum() if df_300['CE_OI'].sum() > 0 else 0
@@ -564,7 +491,6 @@ if st.session_state.data_generated:
                         c7.metric("Macro Call Ceiling", int(df.loc[df['CE_OI'].idxmax(), 'STRIKE']))
                         c8.metric("Macro Put Floor", int(df.loc[df['PE_OI'].idxmax(), 'STRIKE']))
 
-                        # CHART 1: TUG OF WAR (TOTAL OI)
                         st.subheader("⚔️ Tug-of-War OI Radar (±300 Pts)")
                         fig1 = go.Figure()
                         fig1.add_trace(go.Bar(
@@ -583,7 +509,6 @@ if st.session_state.data_generated:
                         fig1.update_layout(barmode='overlay', height=600, template="plotly_dark", xaxis=dict(range=[-max_side1, max_side1], title="Calls ◄ | ► Puts"))
                         st.plotly_chart(fig1, use_container_width=True)
 
-                        # CHART 2: ACTION BOARD (INTRADAY CHG IN OI)
                         st.subheader("📋 Today's Change in OI (Action Board)")
                         board = df_300.copy()
                         board['NET_FLOW'] = board['PE_CHG_OI'] - board['CE_CHG_OI']
@@ -609,7 +534,6 @@ if st.session_state.data_generated:
                         fig2.update_layout(height=600, template="plotly_dark", xaxis=dict(range=[-max_x2, max_x2], title="Bearish Flow ◄ | ► Bullish Flow"))
                         st.plotly_chart(fig2, use_container_width=True)
                         
-                        # CHART 3: PURE MIDDAY SESSION COMPARISON
                         if st.session_state.morning_anchor is not None:
                             st.markdown("---")
                             st.subheader("⏱️ Session Comparison (Anchor vs Live)")
@@ -644,7 +568,6 @@ if st.session_state.data_generated:
                             fig3.update_layout(height=600, template="plotly_dark", xaxis=dict(range=[-max_x3, max_x3], title="Net Call Add ◄ | ► Net Put Add"))
                             st.plotly_chart(fig3, use_container_width=True)
 
-                        # CHART 4: VOLATILITY SMILE (IV SKEW)
                         st.markdown("---")
                         st.subheader("📈 Implied Volatility (IV) Skew")
                         iv_data = df_300[(df_300['CE_IV'] > 0) & (df_300['PE_IV'] > 0)]
